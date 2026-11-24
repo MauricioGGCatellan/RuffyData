@@ -4,13 +4,10 @@ plugins {
 
 android {
     namespace = "com.example.rufusdata"
-    compileSdk {
-        version = release(37)
-    }
-
+    compileSdk = 37
     defaultConfig {
         applicationId = "com.example.rufusdata"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
@@ -42,7 +39,14 @@ dependencies {
     implementation("androidx.core:core-ktx:1.19.1")
 
     implementation("androidx.lifecycle:lifecycle-service:2.11.1")
+    // Health Connect
+    implementation("androidx.health.connect:connect-client:1.1.0")
 
+    // Activity Result API
+    implementation("androidx.activity:activity-ktx:1.13.0")
+
+    // Lifecycle e Coroutines
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.1")
     val cameraXVersion = "1.6.2"
 
     implementation("androidx.camera:camera-camera2:$cameraXVersion")

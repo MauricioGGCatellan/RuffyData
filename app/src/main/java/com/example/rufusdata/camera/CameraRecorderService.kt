@@ -25,12 +25,19 @@ import androidx.camera.video.VideoRecordEvent
 
 import com.example.rufusdata.MainActivity
 
+import android.app.Service
+
 import java.io.File
 
 class CameraRecorderService : LifecycleService() {
 
     companion object {
+        const val KEY_RECORDING_STARTED_AT =
+            "recording_started_at"
 
+        const val KEY_RECORDING_ENDED_AT =
+            "recording_ended_at"
+            
         const val ACTION_START =
             "com.example.seuapp.ACTION_START"
 
@@ -85,7 +92,15 @@ class CameraRecorderService : LifecycleService() {
             ACTION_START -> {
 
                 if (!isStarting) {
-
+                    getSharedPreferences(
+                        PREFS_NAME,
+                        MODE_PRIVATE
+                    ).edit()
+                        .remove(KEY_LAST_VIDEO_PATH)
+                        .remove(KEY_RECORDING_STARTED_AT)
+                        .remove(KEY_RECORDING_ENDED_AT)
+                        .apply()
+    
                     isStarting = true
                     stopRequested = false
 
@@ -216,6 +231,17 @@ class CameraRecorderService : LifecycleService() {
                 when (event) {
 
                     is VideoRecordEvent.Start -> {
+                        val startedAt = System.currentTimeMillis()
+
+                        getSharedPreferences(
+                            PREFS_NAME,
+                            MODE_PRIVATE
+                        ).edit()
+                            .putLong(
+                                KEY_RECORDING_STARTED_AT,
+                                startedAt
+                            )
+                            .apply()
 
                         publishStatus(
                             "Gravando vídeo...",
@@ -236,6 +262,8 @@ class CameraRecorderService : LifecycleService() {
 
                         } else {
 
+                            val endedAt = System.currentTimeMillis()
+
                             getSharedPreferences(
                                 PREFS_NAME,
                                 MODE_PRIVATE
@@ -243,6 +271,10 @@ class CameraRecorderService : LifecycleService() {
                                 .putString(
                                     KEY_LAST_VIDEO_PATH,
                                     file.absolutePath
+                                )
+                                .putLong(
+                                    KEY_RECORDING_ENDED_AT,
+                                    endedAt
                                 )
                                 .apply()
 
@@ -257,7 +289,7 @@ class CameraRecorderService : LifecycleService() {
 
                         cameraProvider?.unbindAll()
 
-                        stopForeground(true)
+                        stopForeground(Service.STOP_FOREGROUND_REMOVE)
                         stopSelf()
                     }
 
@@ -384,7 +416,7 @@ class CameraRecorderService : LifecycleService() {
 
         publishStatus(message, false)
 
-        stopForeground(true)
+        stopForeground(Service.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
@@ -401,7 +433,7 @@ class CameraRecorderService : LifecycleService() {
 
         publishStatus(message, false)
 
-        stopForeground(true)
+        stopForeground(Service.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
