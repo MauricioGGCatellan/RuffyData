@@ -69,12 +69,15 @@ class MainActivity : ComponentActivity() {
     // Componentes da interface
     private lateinit var healthStatusText: TextView
     private lateinit var healthResultText: TextView
-
+    
+    private lateinit var sessionWindowText: TextView
+    
     private lateinit var cameraStatusText: TextView
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
 
-    // Identificação do participante
+    // Identificação do participante e da sessão
+    private lateinit var sessionIdInput: EditText
     private lateinit var participantIdInput: EditText
 
     // Upload
@@ -176,6 +179,16 @@ class MainActivity : ComponentActivity() {
         }
     }
     
+    //Private functions
+    
+    private fun formatInstant(instant: Instant): String {
+        val formatter = DateTimeFormatter
+            .ofPattern("dd/MM/yyyy HH:mm:ss")
+            .withZone(ZoneId.systemDefault())
+
+        return formatter.format(instant)
+    }
+
     private fun getHeartRateQueryWindow(): HeartRateQueryWindow {
 
         val preferences = getSharedPreferences(
@@ -210,8 +223,8 @@ class MainActivity : ComponentActivity() {
         if (validSession) {
 
             return HeartRateQueryWindow(
-                start = Instant.ofEpochMilli(startedAt),
-                end = Instant.ofEpochMilli(endedAt),
+                start = Instant.ofEpochMilli(startedAt).minusSeconds(120),
+                end = Instant.ofEpochMilli(endedAt).plusSeconds(120),
                 isVideoSession = true
             )
         }
@@ -366,6 +379,14 @@ class MainActivity : ComponentActivity() {
 
         healthCard.addView(healthResultText)
 
+        sessionWindowText = createText(
+            "Janela da sessão: ainda não consultada.",
+            14f,
+            secondaryColor
+        )
+
+        healthCard.addView(sessionWindowText)
+        
         addButton(
             healthCard,
             "Conectar Health Connect",
@@ -453,7 +474,22 @@ class MainActivity : ComponentActivity() {
             14f,
             secondaryColor
         )
-
+        // Campo de sessãosession
+        sessionIdInput = EditText(this).apply {
+            hint = "ID da sessão"
+            textSize = 15f
+            inputType = InputType.TYPE_CLASS_TEXT
+            isSingleLine = true
+            setTextColor(textColor)
+            setHintTextColor(secondaryColor)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = GradientDrawable().apply {
+                setColor(Color.WHITE)
+                setStroke(dp(1), green)
+                cornerRadius = dp(12).toFloat()
+            }
+        }
+         
         // Campo de identificação
         participantIdInput = EditText(this).apply {
 
@@ -481,7 +517,17 @@ class MainActivity : ComponentActivity() {
                 cornerRadius = dp(12).toFloat()
             }
         }
-
+        
+        uploadCard.addView(
+            sessionIdInput,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(52)
+            ).apply {
+                topMargin = dp(8)
+            }
+        )
+        
         uploadCard.addView(
             participantIdInput,
             LinearLayout.LayoutParams(
@@ -768,9 +814,21 @@ class MainActivity : ComponentActivity() {
     }
     
     private fun uploadSessionFiles() {
-
+        
+        val sessionId = sessionIdInput.text.toString().trim() 
         val participantId =
             participantIdInput.text.toString().trim()
+
+        if (sessionId.isBlank()) {
+            
+            AlertDialog.Builder(this)
+                .setTitle("Sessão necessária")
+                .setMessage("Informe o identificador da sessão antes de enviar os arquivos.")
+                .setPositiveButton("OK", null)
+                .show()
+                
+            return
+        }
 
         if (participantId.isBlank()) {
 
@@ -861,6 +919,7 @@ class MainActivity : ComponentActivity() {
 
                 // 2. Enviar os dois arquivos.
                 val result = uploadRepository.uploadSession(
+                    sessionId = sessionId,
                     participantId = participantId,
                     videoFile = videoFile,
                     csvFile = csvFile
@@ -878,6 +937,7 @@ class MainActivity : ComponentActivity() {
                         """
                         Os arquivos foram enviados ao servidor.
 
+                        Sessão: $sessionId
                         Participante: $participantId
 
                         Vídeo: enviado
@@ -948,7 +1008,38 @@ class MainActivity : ComponentActivity() {
         val client = healthClient ?: return
 
         val window = getHeartRateQueryWindow()
+        
+        val preferences = getSharedPreferences(
+            CameraRecorderService.PREFS_NAME,
+            MODE_PRIVATE
+        )
 
+        val startedAtMillis = preferences.getLong(
+            CameraRecorderService.KEY_RECORDING_STARTED_AT,
+            -1L
+        )
+
+        val endedAtMillis = preferences.getLong(
+            CameraRecorderService.KEY_RECORDING_ENDED_AT,
+            -1L
+        )
+
+        if (startedAtMillis > 0L && endedAtMillis > startedAtMillis) {
+            val originalStart = Instant.ofEpochMilli(startedAtMillis)
+            val originalEnd = Instant.ofEpochMilli(endedAtMillis)
+
+            sessionWindowText.text = """
+                Início da gravação: ${formatInstant(originalStart)}
+                Fim da gravação: ${formatInstant(originalEnd)}
+                Janela consultada: ${formatInstant(window.start)} até ${formatInstant(window.end)}
+            """.trimIndent()
+        } else {
+            sessionWindowText.text = """
+                Nenhuma sessão finalizada encontrada.
+                Janela consultada: ${formatInstant(window.start)} até ${formatInstant(window.end)}
+            """.trimIndent()
+        }
+        
         healthStatusText.text =
             if (window.isVideoSession) {
                 "Consultando dados da sessão..."

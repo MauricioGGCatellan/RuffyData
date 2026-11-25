@@ -1,11 +1,8 @@
-
 package com.example.rufusdata.network
 
 import android.net.Uri
-
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -21,10 +18,15 @@ class UploadRepository(
 ) {
 
     suspend fun uploadSession(
+        sessionId: String,
         participantId: String,
         videoFile: File,
         csvFile: File
     ): UploadResult = withContext(Dispatchers.IO) {
+
+        require(sessionId.isNotBlank()) {
+            "Identificador da sessão não informado."
+        }
 
         require(participantId.isNotBlank()) {
             "Identificador do participante não informado."
@@ -38,47 +40,25 @@ class UploadRepository(
             "Arquivo CSV não encontrado."
         }
 
-        val user = Uri.encode(participantId)
+        val session = Uri.encode(sessionId.trim())
+        val user = Uri.encode(participantId.trim())
 
-        var videoUploaded = false
+        val videoResponse = uploadMultipart(
+            endpoint = "$baseUrl/face/$session/$user",
+            file = videoFile,
+            mimeType = "video/mp4"
+        )
 
-        try {
+        val heartRateResponse = uploadMultipart(
+            endpoint = "$baseUrl/hr/$session/$user",
+            file = csvFile,
+            mimeType = "text/csv"
+        )
 
-            // 1. Enviar vídeo.
-            val videoResponse = uploadMultipart(
-                endpoint = "$baseUrl/face/$user",
-                file = videoFile,
-                mimeType = "video/mp4"
-            )
-
-            videoUploaded = true
-
-            // 2. Enviar frequência cardíaca.
-            val heartRateResponse = uploadMultipart(
-                endpoint = "$baseUrl/hr/$user",
-                file = csvFile,
-                mimeType = "text/csv"
-            )
-
-            UploadResult(
-                videoResponse = videoResponse,
-                heartRateResponse = heartRateResponse
-            )
-
-        } catch (e: Exception) {
-
-            if (e is kotlinx.coroutines.CancellationException) {
-                throw e
-            }
-
-            val message = if (videoUploaded) {
-                "O vídeo foi enviado, mas houve uma falha no envio do CSV: ${e.message}"
-            } else {
-                "Falha ao enviar o vídeo: ${e.message}"
-            }
-
-            throw IOException(message, e)
-        }
+        UploadResult(
+            videoResponse = videoResponse,
+            heartRateResponse = heartRateResponse
+        )
     }
 
     private fun uploadMultipart(
@@ -87,31 +67,25 @@ class UploadRepository(
         mimeType: String
     ): String {
 
-        val boundary =
-            "----RufusData${System.nanoTime()}"
+        val boundary = "----RufusData${System.nanoTime()}"
 
         val header = (
             "--$boundary\r\n" +
-            "Content-Disposition: form-data; " +
-            "name=\"file\"; filename=\"${file.name}\"\r\n" +
-            "Content-Type: $mimeType\r\n" +
-            "\r\n"
+                "Content-Disposition: form-data; name=\"file\"; filename=\"${file.name}\"\r\n" +
+                "Content-Type: $mimeType\r\n" +
+                "\r\n"
         ).toByteArray(Charsets.UTF_8)
 
         val footer = (
             "\r\n--$boundary--\r\n"
         ).toByteArray(Charsets.UTF_8)
 
-        val connection =
-            URL(endpoint).openConnection() as HttpURLConnection
+        val connection = URL(endpoint).openConnection() as HttpURLConnection
 
         try {
-
             connection.requestMethod = "POST"
-
             connection.doOutput = true
             connection.doInput = true
-
             connection.connectTimeout = 15_000
             connection.readTimeout = 120_000
 
@@ -125,35 +99,22 @@ class UploadRepository(
                 "application/json"
             )
 
-            // Calcula o tamanho total do multipart.
             val contentLength =
-                header.size.toLong() +
-                file.length() +
-                footer.size.toLong()
+                header.size.toLong() + file.length() + footer.size.toLong()
 
-            connection.setFixedLengthStreamingMode(
-                contentLength
-            )
+            connection.setFixedLengthStreamingMode(contentLength)
 
-            // Escreve o multipart sem carregar o vídeo inteiro na memória.
             connection.outputStream.use { output ->
-
                 output.write(header)
-
                 file.inputStream().use { input ->
                     input.copyTo(output)
                 }
-
                 output.write(footer)
-
                 output.flush()
             }
 
             val responseCode = connection.responseCode
-
-            val responseStream = if (
-                responseCode in 200..299
-            ) {
+            val responseStream = if (responseCode in 200..299) {
                 connection.inputStream
             } else {
                 connection.errorStream
@@ -165,16 +126,11 @@ class UploadRepository(
                 .orEmpty()
 
             if (responseCode !in 200..299) {
-
-                throw IOException(
-                    "HTTP $responseCode: ${responseBody.take(1000)}"
-                )
+                throw IOException("HTTP $responseCode: ${responseBody.take(1000)}")
             }
 
             return "HTTP $responseCode: $responseBody"
-
         } finally {
-
             connection.disconnect()
         }
     }
